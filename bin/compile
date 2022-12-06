@@ -1,0 +1,56 @@
+#!/bin/bash
+
+BP_DIR=$(cd $(dirname ${0:-}); cd ..; pwd)
+BUILD_DIR=$1
+CACHE_DIR=$2
+
+VERSION=2.8.0
+PROFILE_PATH="$BUILD_DIR/.profile.d/utf8proc.sh"
+INSTALL_DIR="$BUILD_DIR/.heroku/vendor/lib"
+
+indent() {
+  sed -u 's/^/       /'
+}
+
+# Usage: $ set-env key value
+set-env() {
+  echo "export $1=$2" >> $PROFILE_PATH
+}
+
+echo "-----> Running buildpack https://github.com/voke/heroku-buildpack-utf8proc"
+
+echo "Create .profile.d" | indent
+mkdir -p "$BUILD_DIR/.profile.d"
+
+# If the build pack does intend to use a cache, it should create the
+# CACHE_DIR directory if it doesn’t exist.
+mkdir -p $CACHE_DIR
+
+if [ ! -e $CACHE_DIR/usr/local/lib/libutf8proc.so ]; then
+
+  cd $CACHE_DIR
+
+  echo
+  echo "-----> Fetch utf8proc $VERSION"
+
+  curl -SL https://github.com/JuliaStrings/utf8proc/archive/refs/tags/v$VERSION.tar.gz | tar xvz
+  cd utf8proc-$VERSION
+
+  echo
+  echo "-----> Build utf8proc $VERSION"
+
+  make
+  make install DESTDIR=$CACHE_DIR
+
+fi
+
+mkdir -p $INSTALL_DIR
+rsync -avz $CACHE_DIR/usr/local/lib/ ${INSTALL_DIR}
+
+set-env LD_LIBRARY_PATH '/app/.heroku/vendor/lib:$LD_LIBRARY_PATH'
+
+# Provide an environment for subsequent buildpacks
+cat >${BP_DIR}/export <<EOF
+export LIBRARY_PATH="$CACHE_DIR/usr/local/lib:\${LIBRARY_PATH}"
+export CPATH="$CACHE_DIR/usr/local/include:\${CPATH}"
+EOF
